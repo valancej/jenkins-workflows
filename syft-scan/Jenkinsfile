@@ -1,0 +1,70 @@
+pipeline {
+    agent any
+
+    environment {
+
+        JFROG_CLI_BUILD_NAME = "${env.JOB_NAME}"
+        JFROG_CLI_BUILD_NUMBER = "${env.BUILD_NUMBER}"
+        GIT_REPO_URL = "https://github.com/valancej/maven-demo.git"
+        GIT_REPO_NAME = "maven-demo"
+    }
+
+    tools {
+        maven 'maven'
+        jdk 'jdk'
+    }
+
+    stages {
+        
+        stage ('Initialize') {
+            steps {
+                sh '''
+                    echo "PATH = ${PATH}"
+                    echo "M2_HOME = ${M2_HOME}"
+                    echo "${WORKSPACE}"
+                '''
+            }
+        }
+
+        stage ('Download Syft') {
+            steps {
+                sh 'curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b .'
+            }
+        }
+
+        stage('Checkout and Build Maven Project') {
+            steps {
+                dir ('scm') {
+                    git branch: 'main', url: "${GIT_REPO_URL}"
+                    sh 'mvn -Dmaven.test.failure.ignore=true install'
+                }
+            }
+        }
+
+        stage ('Create SBOM for built Maven project with Anchore Enterprise') {
+
+            steps {
+
+                sh './syft dir:scm/' // Create SBOM via anchorectl
+
+            }
+
+        }
+
+        stage ('Import Source SBOM to Anchore Enterprise') {
+            steps {
+                sh './syft dir:scm/' // Import source sbom via anchorectl
+            }
+        }
+
+        stage ('Push maven snapshot to Artifactory') {
+            steps {
+
+                sh './syft dir:scm/' // Scan with Syft
+
+            }
+        }
+
+    }
+
+}
